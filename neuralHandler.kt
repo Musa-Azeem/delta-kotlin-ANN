@@ -1,33 +1,71 @@
 import java.io.File
 import java.io.BufferedReader
+import java.io.FileOutputStream
 import kotlin.math.E
 import kotlin.math.pow
 
 fun main() {
-        // Load ANN weights and input ranges
-        var bufferedReader: BufferedReader 
+    var bufferedReader: BufferedReader 
+
+    // read X, Y, and X
+    var xBuffer:MutableList<MutableList<Double>> = mutableListOf()
+    var yBuffer:MutableList<MutableList<Double>> = mutableListOf()
+    var zBuffer:MutableList<MutableList<Double>> = mutableListOf()
+    var extrasBuffer:MutableList<MutableList<String>> = mutableListOf()
+    
+    bufferedReader = File("2022-11-10_11_43_40/2022-11-10_11_43_40.0.csv").bufferedReader()
+    val rawDataString = bufferedReader.use {it.readText()}
+
+    var listOfRowStrings: List<String> = rawDataString.split("\n")
+    listOfRowStrings = listOfRowStrings.slice(2 until listOfRowStrings.size-1)
+
+    for (row in listOfRowStrings) {
+        // val doubleListOfEntries: MutableList<Double> = mutableListOf()
+        val rowList = row.split(",")
+        xBuffer.add(mutableListOf(rowList[1].toDouble()))
+        yBuffer.add(mutableListOf(rowList[2].toDouble()))
+        zBuffer.add(mutableListOf(rowList[3].toDouble()))
+        extrasBuffer.add(mutableListOf(rowList[0], rowList[4], rowList[5]))
+    }
+
+    // Load ANN weights and input ranges
+    bufferedReader = File("raw/input_to_hidden_weights_and_biases").bufferedReader()
+    val inputToHiddenWeightsAndBiasesString = bufferedReader.use {it.readText()}
+
+    bufferedReader = File("raw/hidden_to_output_weights_and_biases").bufferedReader()
+    val hiddenToOutputWeightsAndBiasesString = bufferedReader.use {it.readText()}
+
+    bufferedReader = File("raw/input_ranges").bufferedReader()
+    val inputRangesString = bufferedReader.use {it.readText()}
 
 
-        bufferedReader = File("raw/input_to_hidden_weights_and_biases").bufferedReader()
-        val inputToHiddenWeightsAndBiasesString = bufferedReader.use {it.readText()}
+    val numWindowsBatched = 1
 
-        bufferedReader = File("raw/hidden_to_output_weights_and_biases").bufferedReader()
-        val hiddenToOutputWeightsAndBiasesString = bufferedReader.use {it.readText()}
+    var nh = NeuralHandler(
+        inputToHiddenWeightsAndBiasesString,
+        hiddenToOutputWeightsAndBiasesString,
+        inputRangesString,
+        numWindowsBatched
+    )
 
-        bufferedReader = File("raw/input_ranges").bufferedReader()
-        val inputRangesString = bufferedReader.use {it.readText()}
+    var fRaw = FileOutputStream(File("testing.csv"))
 
+    // run model - mimic the way it is done in the watch app
+    // need to add 99 fake values to complete last windows
+    for (i in 1..99) {
+        extrasBuffer.add(mutableListOf("x", "x", "x"))
+        xBuffer.add(mutableListOf(0.0))        
+        yBuffer.add(mutableListOf(0.0))
+        zBuffer.add(mutableListOf(0.0))
+    }
 
-        val numWindowsBatched = 1
-
-        var nh = NeuralHandler(
-            inputToHiddenWeightsAndBiasesString,
-            hiddenToOutputWeightsAndBiasesString,
-            inputRangesString,
-            numWindowsBatched
-        )
-
-        nh.processBatch()
+    for (i in 0 until xBuffer.size-99) {
+        nh.processBatch(extrasBuffer.subList(i, i+100),
+                        xBuffer.subList(i, i+100), 
+                        yBuffer.subList(i, i+100),
+                        zBuffer.subList(i, i+100),
+                        fRaw)
+    }    
 }
 
 class NeuralHandler (inputToHiddenWeightsAndBiasesString: String,
@@ -143,15 +181,14 @@ class NeuralHandler (inputToHiddenWeightsAndBiasesString: String,
                 currentPuffLength ++
                 state = 2
             }
-//            Log.d("0000","state $state")
-            // fRaw.write((extrasBuffer[i][0]+","+
-            //         xBuffer[i][0]+","+
-            //         yBuffer[i][0]+","+
-            //         zBuffer[i][0]+","+
-            //         extrasBuffer[i][1]+","+
-            //         extrasBuffer[i][2]+","+
-            //         smokingOutput.toString()+","+
-            //         state.toString()+"\n").toByteArray())
+            fRaw.write((extrasBuffer[i][0]+","+
+                    xBuffer[i][0]+","+
+                    yBuffer[i][0]+","+
+                    zBuffer[i][0]+","+
+                    extrasBuffer[i][1]+","+
+                    extrasBuffer[i][2]+","+
+                    smokingOutput.toString()+","+
+                    state.toString()+"\n").toByteArray())
             i++
         }
     }
@@ -168,11 +205,11 @@ class NeuralHandler (inputToHiddenWeightsAndBiasesString: String,
                     If anyone asks where this info is found, see (Cole et al. 2017) at
                     https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5745355/.
          */
-        var normedInput = minMaxNorm(input)
+        var normedInput = Matrix.minMaxNorm(input)
         normedInput.addOneToFront()
-        var hiddenOutput = tanSigmoid(inputToHiddenWeightsAndBiases * normedInput)
+        var hiddenOutput = Matrix.tanSigmoid(inputToHiddenWeightsAndBiases * normedInput)
         hiddenOutput.addOneToFront()
-        return logSigmoid(hiddenToOutputWeightsAndBiases * hiddenOutput)[0][0]
+        return Matrix.logSigmoid(hiddenToOutputWeightsAndBiases * hiddenOutput)[0][0]
     }
 }
 
